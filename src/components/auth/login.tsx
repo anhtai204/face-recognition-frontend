@@ -46,7 +46,6 @@ const Login = () => {
     // trigger sign-in
     const res = await authenticate(email, password);
 
-    console.log(">>>res: ", res);
 
     if (res?.error) {
       // Inactive Account
@@ -57,7 +56,8 @@ const Login = () => {
         return;
       }
       // error
-      toast("Login Failed");
+      // toast("Login Failed");
+      toast.error("Tài khoản không tồn tại!");
     } else {
       const session = await getSession();
       const role = session?.user?.role;
@@ -86,14 +86,14 @@ const Login = () => {
             <div className="flex-1">
               <Link href="/" className="flex items-center mb-12">
                 <span className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-indigo-400 bg-clip-text text-transparent">
-                  ITRAN EDU
+                  Face Recognition
                 </span>
               </Link>
               <div className="space-y-4 max-w-md">
                 <h1 className="text-4xl font-bold text-indigo-900 dark:text-indigo-100">
                   Welcome Back
                 </h1>
-                {/* <p className="text-gray-600 dark:text-gray-300">
+                <p className="text-gray-600 dark:text-gray-300">
                   Don't have an account?{" "}
                   <Link
                     href="/auth/register"
@@ -101,7 +101,7 @@ const Login = () => {
                   >
                     Sign Up
                   </Link>
-                </p> */}
+                </p>
               </div>
               <div className="relative mt-12 lg:mt-16">
                 {/* <Image

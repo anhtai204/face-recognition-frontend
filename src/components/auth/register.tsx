@@ -51,7 +51,8 @@ const Register = () => {
     if (res?.data) {
       router.push(`/verify/${res?.data?.id}`);
     } else {
-      toast(res?.message);
+      // toast(res?.message);
+      toast.error(res?.message || "Email đã tồn tại!");
     }
   };
 
@@ -63,7 +64,7 @@ const Register = () => {
           <div className="flex-1">
             <Link href="/" className="flex items-center mb-12">
               <span className="text-3xl font-bold bg-gradient-to-r from-purple-600 to-indigo-400 bg-clip-text text-transparent">
-                ITRAN EDU
+                Face Recognition
               </span>
             </Link>
             <div className="space-y-4 max-w-md">

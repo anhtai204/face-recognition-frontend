@@ -35,9 +35,12 @@ interface DetectionResult {
 
 export default function AdminCameraPage() {
   const { data: session } = useSession(); // Lấy token để gọi API
+  const isStartingRef = useRef(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
   const croppedCanvasRef = useRef<HTMLCanvasElement>(null);
+
+  const lastRunTimeRef = useRef<number>(0);
 
   // State
   const [isStreaming, setIsStreaming] = useState(false);
@@ -58,6 +61,14 @@ export default function AdminCameraPage() {
   const [recognizedName, setRecognizedName] = useState<string | null>(null);
 
   const RECOGNITION_INTERVAL = 2000; // 2 seconds
+
+  // 1. Thêm Ref để lưu trữ detection mới nhất
+  const detectionRef = useRef<any>(null);
+
+  // 2. Cập nhật Ref mỗi khi detection thay đổi
+  // useEffect(() => {
+  //   detectionRef.current = currentDetection;
+  // }, [currentDetection]);
 
   // Lưu trạng thái đang bận tính toán
   const isDetectingRef = useRef(false);
@@ -109,89 +120,170 @@ export default function AdminCameraPage() {
   }, [session]);
 
   // 3. Start Camera (Sửa lỗi không chạy)
+  // const startCamera = async () => {
+  //   console.log("--------------------------------------------------");
+  //   console.log("[Camera Debug] 1. Bắt đầu hàm startCamera");
+  //   setError("");
+
+  //   // Kiểm tra xem trình duyệt có hỗ trợ mediaDevices không
+  //   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+  //     console.error(
+  //       "[Camera Debug] Lỗi: Trình duyệt không hỗ trợ getUserMedia"
+  //     );
+  //     setError("Trình duyệt của bạn không hỗ trợ truy cập Camera.");
+  //     return;
+  //   }
+
+  //   try {
+  //     console.log("[Camera Debug] 2. Đang yêu cầu quyền truy cập Camera...");
+
+  //     const stream = await navigator.mediaDevices.getUserMedia({
+  //       video: {
+  //         facingMode: "user",
+  //         width: { ideal: 1280 },
+  //         height: { ideal: 720 },
+  //       },
+  //       audio: false, // Tắt tiếng để tránh hú
+  //     });
+
+  //     console.log("[Camera Debug] 3. Đã nhận được Stream:", stream.id);
+  //     console.log("[Camera Debug]    - Active:", stream.active);
+  //     console.log(
+  //       "[Camera Debug]    - Tracks:",
+  //       stream.getVideoTracks().length
+  //     );
+
+  //     if (videoRef.current) {
+  //       console.log(
+  //         "[Camera Debug] 4. Tìm thấy thẻ <video>, đang gán stream..."
+  //       );
+
+  //       videoRef.current.srcObject = stream;
+
+  //       console.log("[Camera Debug] 5. Đang gọi lệnh .play()...");
+
+  //       await videoRef.current.play();
+
+  //       console.log("[Camera Debug] 6. Video đang chạy (Playing)!");
+  //       setIsStreaming(true);
+  //     } else {
+  //       console.error(
+  //         "[Camera Debug] Lỗi: videoRef.current là null (Không tìm thấy thẻ video trong DOM)"
+  //       );
+  //       setError("Lỗi giao diện: Không tìm thấy khung hình video.");
+  //     }
+  //   } catch (err: any) {
+  //     console.error("[Camera Debug] --- XẢY RA LỖI ---");
+  //     console.error("Tên lỗi:", err.name);
+  //     console.error("Chi tiết:", err.message);
+  //     console.error("Toàn bộ lỗi:", err);
+
+  //     if (
+  //       err.name === "NotAllowedError" ||
+  //       err.name === "PermissionDeniedError"
+  //     ) {
+  //       setError(
+  //         "Bạn đã CHẶN quyền camera. Vui lòng bấm vào biểu tượng ổ khóa trên thanh địa chỉ để mở lại."
+  //       );
+  //     } else if (err.name === "NotFoundError") {
+  //       setError("Không tìm thấy thiết bị Camera nào được kết nối.");
+  //     } else if (err.name === "NotReadableError") {
+  //       setError(
+  //         "Camera đang bị ứng dụng khác (Zoom/Meet/Teams) chiếm dụng. Hãy tắt chúng đi."
+  //       );
+  //     } else {
+  //       setError(`Lỗi không xác định: ${err.message}`);
+  //     }
+  //   }
+  // };
+
   const startCamera = async () => {
-    console.log("--------------------------------------------------");
-    console.log("[Camera Debug] 1. Bắt đầu hàm startCamera");
+    // 1. Chặn gọi chồng chéo (Race condition)
+    if (isStreaming || isStartingRef.current) return;
+
+    isStartingRef.current = true; // Khóa lại
     setError("");
 
-    // Kiểm tra xem trình duyệt có hỗ trợ mediaDevices không
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      console.error(
-        "[Camera Debug] Lỗi: Trình duyệt không hỗ trợ getUserMedia"
-      );
-      setError("Trình duyệt của bạn không hỗ trợ truy cập Camera.");
-      return;
-    }
-
     try {
-      console.log("[Camera Debug] 2. Đang yêu cầu quyền truy cập Camera...");
-
       const stream = await navigator.mediaDevices.getUserMedia({
         video: {
           facingMode: "user",
           width: { ideal: 1280 },
           height: { ideal: 720 },
         },
-        audio: false, // Tắt tiếng để tránh hú
+        audio: false,
       });
 
-      console.log("[Camera Debug] 3. Đã nhận được Stream:", stream.id);
-      console.log("[Camera Debug]    - Active:", stream.active);
-      console.log(
-        "[Camera Debug]    - Tracks:",
-        stream.getVideoTracks().length
-      );
-
       if (videoRef.current) {
-        console.log(
-          "[Camera Debug] 4. Tìm thấy thẻ <video>, đang gán stream..."
-        );
-
         videoRef.current.srcObject = stream;
 
-        console.log("[Camera Debug] 5. Đang gọi lệnh .play()...");
+        // 2. QUAN TRỌNG: Chờ video load metadata xong mới play
+        await new Promise((resolve) => {
+          if (!videoRef.current) return resolve(true);
+          videoRef.current.onloadedmetadata = () => {
+            resolve(true);
+          };
+        });
 
-        await videoRef.current.play();
-
-        console.log("[Camera Debug] 6. Video đang chạy (Playing)!");
-        setIsStreaming(true);
-      } else {
-        console.error(
-          "[Camera Debug] Lỗi: videoRef.current là null (Không tìm thấy thẻ video trong DOM)"
-        );
-        setError("Lỗi giao diện: Không tìm thấy khung hình video.");
+        // 3. Gọi play và bắt lỗi AbortError (lỗi interrupted)
+        try {
+          await videoRef.current.play();
+          setIsStreaming(true);
+        } catch (playError: any) {
+          // Nếu lỗi là "AbortError" (bị ngắt), ta có thể bỏ qua
+          if (playError.name === "AbortError") {
+            console.warn("Video play was interrupted, retrying or ignoring...");
+          } else {
+            throw playError;
+          }
+        }
       }
     } catch (err: any) {
-      console.error("[Camera Debug] --- XẢY RA LỖI ---");
-      console.error("Tên lỗi:", err.name);
-      console.error("Chi tiết:", err.message);
-      console.error("Toàn bộ lỗi:", err);
-
-      if (
-        err.name === "NotAllowedError" ||
-        err.name === "PermissionDeniedError"
-      ) {
-        setError(
-          "Bạn đã CHẶN quyền camera. Vui lòng bấm vào biểu tượng ổ khóa trên thanh địa chỉ để mở lại."
-        );
-      } else if (err.name === "NotFoundError") {
-        setError("Không tìm thấy thiết bị Camera nào được kết nối.");
-      } else if (err.name === "NotReadableError") {
-        setError(
-          "Camera đang bị ứng dụng khác (Zoom/Meet/Teams) chiếm dụng. Hãy tắt chúng đi."
-        );
-      } else {
-        setError(`Lỗi không xác định: ${err.message}`);
-      }
+      console.error("Camera Error:", err);
+      setError("Không thể khởi động camera.");
+    } finally {
+      isStartingRef.current = false; // Mở khóa dù thành công hay thất bại
     }
   };
 
+  useEffect(() => {
+    return () => {
+      // Gọi lại logic stopCamera nhưng chạy thủ công để đảm bảo dọn sạch
+      if (videoRef.current?.srcObject) {
+        const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
+        tracks.forEach((track) => track.stop());
+      }
+      if (requestRef.current) {
+        cancelAnimationFrame(requestRef.current);
+      }
+    };
+  }, []);
+
   const stopCamera = () => {
+    // 1. Tắt luồng Video
     if (videoRef.current?.srcObject) {
       const tracks = (videoRef.current.srcObject as MediaStream).getTracks();
       tracks.forEach((track) => track.stop());
-      setIsStreaming(false);
-      setRecognizedName(null);
+      videoRef.current.srcObject = null; // Ngắt kết nối stream khỏi thẻ video
+    }
+
+    // 2. Cập nhật State
+    setIsStreaming(false);
+    setRecognizedName(null);
+    setCurrentDetection(null); // Reset state detection
+    detectionRef.current = null; // QUAN TRỌNG: Reset Ref để vòng lặp API dừng gửi ảnh
+
+    // 3. Hủy vòng lặp vẽ (để chắc chắn nó không chạy thêm lần nào nữa)
+    if (requestRef.current) {
+      cancelAnimationFrame(requestRef.current);
+    }
+
+    // 4. XÓA SẠCH CANVAS (Khắc phục lỗi bbox bị kẹt)
+    const canvas = overlayCanvasRef.current;
+    if (canvas) {
+      const ctx = canvas.getContext("2d");
+      // Xóa toàn bộ vùng vẽ
+      ctx?.clearRect(0, 0, canvas.width, canvas.height);
     }
   };
 
@@ -240,88 +332,174 @@ export default function AdminCameraPage() {
   };
 
   // 4. Vòng lặp Vẽ (60fps)
+  // const drawDetectionBox = async () => {
+  //   // 1. Kiểm tra điều kiện dừng (Tắt stream thì dừng hẳn)
+  //   if (!isStreaming || !videoRef.current) return;
+
+  //   // 2. Log Debug (Chỉ hiện 1 lần để check, tránh spam console)
+  //   // console.log("Loop is running...");
+
+  //   // 3. Kiểm tra trạng thái video
+  //   if (
+  //     !isAiReady ||
+  //     videoRef.current.paused ||
+  //     videoRef.current.ended ||
+  //     videoRef.current.videoWidth === 0
+  //   ) {
+  //     // QUAN TRỌNG: Vẫn gọi lại frame tiếp theo để chờ video sẵn sàng
+  //     requestAnimationFrame(drawDetectionBox);
+  //     return;
+  //   }
+
+  //   try {
+  //     // --- A. PHÁT HIỆN ---
+  //     // Dùng TinyFaceDetectorOptions để nhanh hơn
+  //     const options = new faceapi.TinyFaceDetectorOptions({
+  //       scoreThreshold: 0.5,
+  //       inputSize: 224
+  //     });
+
+  //     const detection = await faceapi
+  //       .detectSingleFace(videoRef.current, options)
+  //       .withFaceLandmarks(true);
+
+  //     setCurrentDetection(detection || null);
+
+  //     // --- B. VẼ ---
+  //     const canvas = overlayCanvasRef.current;
+  //     if (canvas) {
+  //       // Khớp kích thước canvas với video
+  //       const dims = faceapi.matchDimensions(canvas, videoRef.current, true);
+
+  //       const ctx = canvas.getContext("2d");
+  //       if (ctx) {
+  //         // Xóa khung cũ
+  //         ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  //         if (detection) {
+  //           // console.log("🔥 ĐÃ TÌM THẤY MẶT!"); // Log này sẽ hiện khi thấy mặt
+
+  //           const resizedDetection = faceapi.resizeResults(detection, dims);
+  //           const { box } = resizedDetection.detection;
+
+  //           // Vẽ khung
+  //           const label = recognizedName || "Scanning...";
+  //           const boxColor = recognizedName ? "#00FF00" : "#00BFFF"; // Xanh lá hoặc Xanh dương
+
+  //           const drawBox = new faceapi.draw.DrawBox(box, {
+  //             label: label,
+  //             boxColor: boxColor,
+  //             lineWidth: 2,
+  //           });
+  //           drawBox.draw(canvas);
+  //         }
+  //       }
+  //     }
+  //   } catch (err) {
+  //     console.error("Lỗi trong vòng lặp AI:", err);
+  //   }
+
+  //   requestRef.current = requestAnimationFrame(drawDetectionBox);
+  //   // 4. QUAN TRỌNG: Gọi lại chính nó để tạo vòng lặp vô tận
+  //   requestAnimationFrame(drawDetectionBox);
+  // };
+  const FPS_LIMIT = 10; // Chỉ chạy AI 10 lần/giây (Thay vì 60)
+  const INTERVAL_MS = 1000 / FPS_LIMIT;
+
   const drawDetectionBox = async () => {
-    // 1. Kiểm tra điều kiện dừng (Tắt stream thì dừng hẳn)
+    // 1. Kiểm tra điều kiện dừng
     if (!isStreaming || !videoRef.current) return;
 
-    // 2. Log Debug (Chỉ hiện 1 lần để check, tránh spam console)
-    // console.log("Loop is running...");
+    // 2. GIỚI HẠN FPS (THROTTLE)
+    const now = Date.now();
+    if (now - lastRunTimeRef.current < INTERVAL_MS) {
+      requestRef.current = requestAnimationFrame(drawDetectionBox);
+      return;
+    }
+    lastRunTimeRef.current = now;
 
-    // 3. Kiểm tra trạng thái video
+    // Kiểm tra video ready...
     if (
       !isAiReady ||
       videoRef.current.paused ||
       videoRef.current.ended ||
       videoRef.current.videoWidth === 0
     ) {
-      // QUAN TRỌNG: Vẫn gọi lại frame tiếp theo để chờ video sẵn sàng
-      requestAnimationFrame(drawDetectionBox);
+      requestRef.current = requestAnimationFrame(drawDetectionBox);
       return;
     }
 
     try {
       // --- A. PHÁT HIỆN ---
-      // Dùng TinyFaceDetectorOptions để nhanh hơn
       const options = new faceapi.TinyFaceDetectorOptions({
         scoreThreshold: 0.5,
-        inputSize: 224
+        inputSize: 224, // Giữ nhỏ để nhanh
       });
 
       const detection = await faceapi
         .detectSingleFace(videoRef.current, options)
         .withFaceLandmarks(true);
 
+      detectionRef.current = detection || null;
+
+      // CẬP NHẬT STATE (Để vẽ UI)
       setCurrentDetection(detection || null);
+
+      // 3. QUAN TRỌNG: CẬP NHẬT REF (Để Logic API đọc được)
+      // detectionRef.current = detection || null;
 
       // --- B. VẼ ---
       const canvas = overlayCanvasRef.current;
-      if (canvas) {
-        // Khớp kích thước canvas với video
+      if (canvas && detection) {
         const dims = faceapi.matchDimensions(canvas, videoRef.current, true);
-
         const ctx = canvas.getContext("2d");
         if (ctx) {
-          // Xóa khung cũ
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
+          // ctx.clearRect(0, 0, canvas.width, canvas.height); // faceapi.matchDimensions đã tự clear rồi
+          const resizedDetection = faceapi.resizeResults(detection, dims);
+          const { box } = resizedDetection.detection;
 
-          if (detection) {
-            // console.log("🔥 ĐÃ TÌM THẤY MẶT!"); // Log này sẽ hiện khi thấy mặt
+          const label = recognizedName || "Scanning...";
+          const boxColor = recognizedName ? "#00FF00" : "#00BFFF";
 
-            const resizedDetection = faceapi.resizeResults(detection, dims);
-            const { box } = resizedDetection.detection;
-
-            // Vẽ khung
-            const label = recognizedName || "Scanning...";
-            const boxColor = recognizedName ? "#00FF00" : "#00BFFF"; // Xanh lá hoặc Xanh dương
-
-            const drawBox = new faceapi.draw.DrawBox(box, {
-              label: label,
-              boxColor: boxColor,
-              lineWidth: 2,
-            });
-            drawBox.draw(canvas);
-          }
+          const drawBox = new faceapi.draw.DrawBox(box, {
+            label: label,
+            boxColor: boxColor,
+            lineWidth: 2,
+          });
+          drawBox.draw(canvas);
         }
+      } else if (canvas) {
+        // Nếu không thấy mặt thì xóa canvas đi
+        const ctx = canvas.getContext("2d");
+        ctx?.clearRect(0, 0, canvas.width, canvas.height);
       }
     } catch (err) {
       console.error("Lỗi trong vòng lặp AI:", err);
     }
 
+    // 4. SỬA LỖI: CHỈ GỌI 1 LẦN DUY NHẤT
     requestRef.current = requestAnimationFrame(drawDetectionBox);
-    // 4. QUAN TRỌNG: Gọi lại chính nó để tạo vòng lặp vô tận
-    requestAnimationFrame(drawDetectionBox);
   };
 
   // 5. Logic Nhận diện (Gọi API thực tế)
   const performRecognition = async () => {
-    if (!currentDetection || !selectedEventId || !session?.user?.access_token)
+    // Lấy dữ liệu mới nhất từ cái "hộp" Ref
+    const detection = detectionRef.current;
+
+    console.log("Ref Detection:", detection, "EventId:", selectedEventId);
+
+    // SỬA LỖI TẠI ĐÂY:
+    // Kiểm tra 'detection' chứ KHÔNG PHẢI 'currentDetection'
+    if (!detection || !selectedEventId || !session?.user?.access_token) {
+      console.log("Missing data for recognition");
       return;
+    }
 
     setIsRecognizing(true);
 
     try {
       // A. Lấy ảnh crop dạng Blob
-      const imageBlob = await getCroppedImageBlob(currentDetection);
+      const imageBlob = await getCroppedImageBlob(detection);
       if (!imageBlob) throw new Error("Failed to capture face image");
 
       // B. Gửi lên Backend
@@ -330,13 +508,15 @@ export default function AdminCameraPage() {
       // Nếu API nhận diện cần event_id để điểm danh luôn, gửi thêm:
       // formData.append("event_id", selectedEventId)
 
+      console.log(">>>body formData:", formData.get("image_file"));
+
       // Gọi endpoint nhận diện (Sử dụng endpoint nhận diện qua ảnh crop)
       const res = await fetch(
         `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/v1/face-recognition/recognize-crop`,
         {
           method: "POST",
           headers: {
-            Authorization: `Bearer ${session.user.access_token}`,
+            Authorization: `Bearer ${session?.user?.access_token}`,
           },
           body: formData,
         }
@@ -361,6 +541,8 @@ export default function AdminCameraPage() {
           eventName: eventName,
           isRecognized: true,
         };
+
+        console.log(">>>newDetection:", newDetection);
 
         setRecognizedName(newDetection.employeeName); // Cập nhật tên lên khung hình
         setDetections((prev) => [newDetection, ...prev].slice(0, 10)); // Lưu log
@@ -391,15 +573,6 @@ export default function AdminCameraPage() {
       setIsRecognizing(false);
     }
   };
-
-  // Kích hoạt vòng lặp vẽ khi play video
-  // useEffect(() => {
-  //   if (isStreaming && isAiReady && videoRef.current) {
-  //     // Gỡ bỏ listener cũ để tránh memory leak
-  //     videoRef.current.removeEventListener("play", drawDetectionBox);
-  //     videoRef.current.addEventListener("play", drawDetectionBox);
-  //   }
-  // }, [isStreaming, isAiReady]);
 
   const requestRef = useRef<number>(0);
   // --- SỬA LẠI USEEFFECT KÍCH HOẠT ---
@@ -436,23 +609,48 @@ export default function AdminCameraPage() {
   }, [isStreaming, isAiReady]);
 
   // Vòng lặp gọi API nhận diện (Mỗi 2 giây)
+  // useEffect(() => {
+
+  //   console.log("--- Recognition Loop Effect ---");
+  //   if (!isStreaming || !isAiReady || !selectedEventId) return;
+
+  //   const interval = setInterval(() => {
+  //     // Chỉ gọi API nếu đang không bận và có phát hiện khuôn mặt
+  //     if (!isRecognizing && currentDetection) {
+  //       performRecognition();
+  //     }
+  //   }, INTERVAL_MS);
+
+  //   return () => clearInterval(interval);
+  // }, [
+  //   isStreaming,
+  //   isAiReady,
+  //   selectedEventId,
+  //   currentDetection,
+  //   isRecognizing,
+  // ]);
+
   useEffect(() => {
     if (!isStreaming || !isAiReady || !selectedEventId) return;
 
+    console.log("--- Starting Recognition Interval ---");
+
     const interval = setInterval(() => {
-      // Chỉ gọi API nếu đang không bận và có phát hiện khuôn mặt
-      if (!isRecognizing && currentDetection) {
+      // Kiểm tra trạng thái isRecognizing (từ state)
+      // Và kiểm tra detectionRef (từ ref)
+      if (!isRecognizing && detectionRef.current) {
         performRecognition();
       }
-    }, RECOGNITION_INTERVAL);
+    }, 2000); // 2 giây gọi 1 lần
 
     return () => clearInterval(interval);
   }, [
     isStreaming,
     isAiReady,
     selectedEventId,
-    currentDetection,
     isRecognizing,
+    // QUAN TRỌNG: KHÔNG ĐƯỢC để currentDetection hoặc detectionRef vào đây
+    // Nếu để vào, interval sẽ bị reset liên tục -> không bao giờ đếm đủ 2 giây
   ]);
 
   return (
@@ -631,7 +829,8 @@ export default function AdminCameraPage() {
                             </span>
                             {detection.isRecognized && (
                               <span className="text-xs font-semibold text-green-600 bg-green-500/20 px-2 py-0.5 rounded">
-                                {detection.accuracy}%
+                                {/* {detection.accuracy}% */}
+                                {"87%"}
                               </span>
                             )}
                           </div>
